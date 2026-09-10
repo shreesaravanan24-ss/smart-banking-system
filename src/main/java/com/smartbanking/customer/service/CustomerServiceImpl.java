@@ -5,8 +5,9 @@ import com.smartbanking.customer.dto.CustomerResponse;
 import com.smartbanking.customer.entity.Customer;
 import com.smartbanking.customer.repository.CustomerRepository;
 import com.smartbanking.enums.Role;
-import org.springframework.stereotype.Service;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
 import java.util.List;
 
 @Service
@@ -27,11 +28,13 @@ public class CustomerServiceImpl implements CustomerService {
     public CustomerResponse createCustomer(CustomerRequest request) {
 
         if (customerRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email already exists");
+            throw new IllegalArgumentException(
+                    "Email already exists");
         }
 
         if (customerRepository.existsByPhone(request.getPhone())) {
-            throw new IllegalArgumentException("Phone number already exists");
+            throw new IllegalArgumentException(
+                    "Phone number already exists");
         }
 
         Customer customer = new Customer(
@@ -43,7 +46,8 @@ public class CustomerServiceImpl implements CustomerService {
 
         customer.setRole(Role.CUSTOMER);
 
-        Customer savedCustomer = customerRepository.save(customer);
+        Customer savedCustomer =
+                customerRepository.save(customer);
 
         return convertToResponse(savedCustomer);
     }
@@ -53,7 +57,8 @@ public class CustomerServiceImpl implements CustomerService {
 
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Customer not found with ID: " + id));
+                        new IllegalArgumentException(
+                                "Customer not found with ID: " + id));
 
         return convertToResponse(customer);
     }
@@ -68,22 +73,49 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
-    public CustomerResponse updateCustomer(Long id, CustomerRequest request) {
+    public CustomerResponse updateCustomer(
+            Long id,
+            CustomerRequest request) {
 
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Customer not found with ID: " + id));
+                        new IllegalArgumentException(
+                                "Customer not found with ID: " + id));
+
+        if (!customer.getEmail().equals(request.getEmail())
+                && customerRepository.existsByEmail(request.getEmail())) {
+
+            throw new IllegalArgumentException(
+                    "Email already exists");
+        }
+
+        if (!customer.getPhone().equals(request.getPhone())
+                && customerRepository.existsByPhone(request.getPhone())) {
+
+            throw new IllegalArgumentException(
+                    "Phone number already exists");
+        }
 
         customer.setFullName(request.getFullName());
         customer.setEmail(request.getEmail());
         customer.setPhone(request.getPhone());
 
-        if (request.getPassword() != null &&
-                !request.getPassword().isBlank()) {
-            customer.setPassword(request.getPassword());
+        /*
+         * Only change the password when a new password
+         * has actually been supplied.
+         */
+        if (request.getPassword() != null
+                && !request.getPassword().isBlank()) {
+
+            customer.setPassword(
+                    passwordEncoder.encode(
+                            request.getPassword()
+                    )
+            );
         }
 
-        Customer updatedCustomer = customerRepository.save(customer);
+        Customer updatedCustomer =
+                customerRepository.save(customer);
 
         return convertToResponse(updatedCustomer);
     }
@@ -99,7 +131,8 @@ public class CustomerServiceImpl implements CustomerService {
         customerRepository.deleteById(id);
     }
 
-    private CustomerResponse convertToResponse(Customer customer) {
+    private CustomerResponse convertToResponse(
+            Customer customer) {
 
         return new CustomerResponse(
                 customer.getId(),
