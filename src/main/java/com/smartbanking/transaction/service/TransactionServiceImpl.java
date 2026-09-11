@@ -76,10 +76,9 @@ public class TransactionServiceImpl implements TransactionService {
         validateAccount(sender);
         validateAccount(receiver);
 
-        verifySenderOwnership(sender);
+        verifyAccountOwnership(sender);
 
-        if (sender.getBalance() == null
-                || sender.getBalance()
+        if (sender.getBalance()
                 .compareTo(request.getAmount()) < 0) {
 
             throw new IllegalArgumentException(
@@ -102,7 +101,8 @@ public class TransactionServiceImpl implements TransactionService {
         transaction.setTransactionId(
                 generateTransactionId());
 
-        transaction.setAmount(request.getAmount());
+        transaction.setAmount(
+                request.getAmount());
 
         transaction.setType(
                 TransactionType.TRANSFER);
@@ -123,11 +123,47 @@ public class TransactionServiceImpl implements TransactionService {
     public List<TransactionResponse> getAccountTransactions(
             Long accountId) {
 
+        Account account = accountRepository
+                .findById(accountId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Account not found"));
+
+        verifyAccountOwnership(account);
+
         return transactionRepository
                 .findByAccountIdOrderByCreatedAtDesc(accountId)
                 .stream()
                 .map(this::convertToResponse)
                 .toList();
+    }
+
+    private void verifyAccountOwnership(Account account) {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()) {
+
+            throw new SecurityException(
+                    "User is not authenticated");
+        }
+
+        String loggedInEmail =
+                authentication.getName();
+
+        if (account.getCustomer() == null
+                || account.getCustomer().getEmail() == null
+                || !account.getCustomer()
+                .getEmail()
+                .equalsIgnoreCase(loggedInEmail)) {
+
+            throw new SecurityException(
+                    "You are not authorized to access this account");
+        }
     }
 
     private void validateAccount(Account account) {
@@ -138,34 +174,6 @@ public class TransactionServiceImpl implements TransactionService {
                     "Account "
                             + account.getAccountNumber()
                             + " is not active");
-        }
-    }
-
-    private void verifySenderOwnership(Account sender) {
-
-        Authentication authentication =
-                SecurityContextHolder
-                        .getContext()
-                        .getAuthentication();
-
-        if (authentication == null
-                || !authentication.isAuthenticated()) {
-
-            throw new IllegalStateException(
-                    "User is not authenticated");
-        }
-
-        String loggedInEmail =
-                authentication.getName();
-
-        if (sender.getCustomer() == null
-                || sender.getCustomer().getEmail() == null
-                || !sender.getCustomer()
-                .getEmail()
-                .equalsIgnoreCase(loggedInEmail)) {
-
-            throw new SecurityException(
-                    "You are not authorized to use this account");
         }
     }
 
