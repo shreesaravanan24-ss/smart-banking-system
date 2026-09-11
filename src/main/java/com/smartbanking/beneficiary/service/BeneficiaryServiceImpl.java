@@ -6,6 +6,9 @@ import com.smartbanking.beneficiary.entity.Beneficiary;
 import com.smartbanking.beneficiary.repository.BeneficiaryRepository;
 import com.smartbanking.customer.entity.Customer;
 import com.smartbanking.customer.repository.CustomerRepository;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,9 +41,11 @@ public class BeneficiaryServiceImpl
                                 "Customer not found with ID: "
                                         + request.getCustomerId()));
 
+        verifyCustomerOwnership(customer);
+
         if (beneficiaryRepository
                 .existsByCustomerIdAndAccountNumber(
-                        request.getCustomerId(),
+                        customer.getId(),
                         request.getAccountNumber())) {
 
             throw new IllegalArgumentException(
@@ -52,8 +57,10 @@ public class BeneficiaryServiceImpl
         beneficiary.setName(request.getName());
         beneficiary.setAccountNumber(
                 request.getAccountNumber());
-        beneficiary.setBankName(request.getBankName());
-        beneficiary.setIfscCode(request.getIfscCode());
+        beneficiary.setBankName(
+                request.getBankName());
+        beneficiary.setIfscCode(
+                request.getIfscCode());
         beneficiary.setCustomer(customer);
 
         Beneficiary saved =
@@ -63,14 +70,18 @@ public class BeneficiaryServiceImpl
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<BeneficiaryResponse>
     getCustomerBeneficiaries(Long customerId) {
 
-        if (!customerRepository.existsById(customerId)) {
-            throw new IllegalArgumentException(
-                    "Customer not found with ID: "
-                            + customerId);
-        }
+        Customer customer = customerRepository
+                .findById(customerId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Customer not found with ID: "
+                                        + customerId));
+
+        verifyCustomerOwnership(customer);
 
         return beneficiaryRepository
                 .findByCustomerId(customerId)
@@ -83,12 +94,46 @@ public class BeneficiaryServiceImpl
     @Transactional
     public void deleteBeneficiary(Long id) {
 
-        if (!beneficiaryRepository.existsById(id)) {
-            throw new IllegalArgumentException(
-                    "Beneficiary not found with ID: " + id);
+        Beneficiary beneficiary =
+                beneficiaryRepository
+                        .findById(id)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Beneficiary not found with ID: "
+                                                + id));
+
+        verifyCustomerOwnership(
+                beneficiary.getCustomer());
+
+        beneficiaryRepository.delete(beneficiary);
+    }
+
+    private void verifyCustomerOwnership(
+            Customer customer) {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()) {
+
+            throw new SecurityException(
+                    "User is not authenticated");
         }
 
-        beneficiaryRepository.deleteById(id);
+        String loggedInEmail =
+                authentication.getName();
+
+        if (customer == null
+                || customer.getEmail() == null
+                || !customer.getEmail()
+                .equalsIgnoreCase(loggedInEmail)) {
+
+            throw new SecurityException(
+                    "You are not authorized to access this customer data");
+        }
     }
 
     private BeneficiaryResponse convertToResponse(
