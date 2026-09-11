@@ -2,6 +2,7 @@ package com.smartbanking.security;
 
 import com.smartbanking.customer.entity.Customer;
 import com.smartbanking.customer.repository.CustomerRepository;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -13,7 +14,8 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     private final CustomerRepository customerRepository;
 
-    public CustomUserDetailsService(CustomerRepository customerRepository) {
+    public CustomUserDetailsService(
+            CustomerRepository customerRepository) {
         this.customerRepository = customerRepository;
     }
 
@@ -21,15 +23,22 @@ public class CustomUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String email)
             throws UsernameNotFoundException {
 
-        Customer customer = customerRepository.findByEmail(email)
+        Customer customer = customerRepository
+                .findByEmail(email)
                 .orElseThrow(() ->
                         new UsernameNotFoundException(
-                                "Customer not found with email: " + email));
+                                "Customer not found with email: " + email
+                        )
+                );
 
         return User.builder()
                 .username(customer.getEmail())
                 .password(customer.getPassword())
-                .roles(customer.getRole().name())
+                .authorities(
+                        new SimpleGrantedAuthority(
+                                "ROLE_" + customer.getRole().name()
+                        )
+                )
                 .build();
     }
 }
