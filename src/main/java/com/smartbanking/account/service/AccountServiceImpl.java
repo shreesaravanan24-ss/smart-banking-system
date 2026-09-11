@@ -7,7 +7,6 @@ import com.smartbanking.account.repository.AccountRepository;
 import com.smartbanking.customer.entity.Customer;
 import com.smartbanking.customer.repository.CustomerRepository;
 import com.smartbanking.enums.AccountStatus;
-
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -35,8 +34,7 @@ public class AccountServiceImpl implements AccountService {
     @Transactional
     public AccountResponse createAccount(AccountRequest request) {
 
-        Customer customer = customerRepository
-                .findById(request.getCustomerId())
+        Customer customer = customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Customer not found with ID: "
@@ -48,10 +46,7 @@ public class AccountServiceImpl implements AccountService {
 
         do {
             accountNumber = generateAccountNumber();
-        } while (
-                accountRepository
-                        .existsByAccountNumber(accountNumber)
-        );
+        } while (accountRepository.existsByAccountNumber(accountNumber));
 
         account.setAccountNumber(accountNumber);
         account.setAccountType(request.getAccountType());
@@ -59,35 +54,36 @@ public class AccountServiceImpl implements AccountService {
         account.setBalance(BigDecimal.ZERO);
         account.setCustomer(customer);
 
-        return convertToResponse(
-                accountRepository.save(account)
-        );
+        Account savedAccount = accountRepository.save(account);
+
+        return convertToResponse(savedAccount);
     }
 
     @Override
     @Transactional(readOnly = true)
     public AccountResponse getAccountById(Long id) {
 
-        Account account = getAccount(id);
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Account not found with ID: " + id));
 
-        verifyOwnership(account);
+        verifyAccess(account);
 
         return convertToResponse(account);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public AccountResponse getAccountByNumber(
-            String accountNumber) {
+    public AccountResponse getAccountByNumber(String accountNumber) {
 
         Account account = accountRepository
                 .findByAccountNumber(accountNumber)
                 .orElseThrow(() ->
                         new IllegalArgumentException(
-                                "Account not found: "
-                                        + accountNumber));
+                                "Account not found: " + accountNumber));
 
-        verifyOwnership(account);
+        verifyAccess(account);
 
         return convertToResponse(account);
     }
@@ -95,6 +91,14 @@ public class AccountServiceImpl implements AccountService {
     @Override
     @Transactional(readOnly = true)
     public List<AccountResponse> getAllAccounts() {
+
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (!isPrivilegedUser(authentication)) {
+            throw new SecurityException(
+                    "Only admin or bank employee can view all accounts");
+        }
 
         return accountRepository.findAll()
                 .stream()
@@ -104,15 +108,13 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional
-    public AccountResponse deposit(
-            Long id,
-            BigDecimal amount) {
+    public AccountResponse deposit(Long id, BigDecimal amount) {
 
         validateAmount(amount);
 
         Account account = getActiveAccount(id);
 
-        verifyOwnership(account);
+        verifyPrivilegedUser();
 
         account.setBalance(
                 account.getBalance().add(amount)
@@ -125,22 +127,17 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional
-    public AccountResponse withdraw(
-            Long id,
-            BigDecimal amount) {
+    public AccountResponse withdraw(Long id, BigDecimal amount) {
 
         validateAmount(amount);
 
         Account account = getActiveAccount(id);
 
-        verifyOwnership(account);
+        verifyPrivilegedUser();
 
-        if (account.getBalance()
-                .compareTo(amount) < 0) {
-
+        if (account.getBalance().compareTo(amount) < 0) {
             throw new IllegalArgumentException(
-                    "Insufficient balance"
-            );
+                    "Insufficient balance");
         }
 
         account.setBalance(
@@ -152,69 +149,94 @@ public class AccountServiceImpl implements AccountService {
         );
     }
 
-    private Account getAccount(Long id) {
-
-        return accountRepository.findById(id)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Account not found with ID: "
-                                        + id));
-    }
-
     private Account getActiveAccount(Long id) {
 
-        Account account = getAccount(id);
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Account not found with ID: " + id));
 
-        if (account.getStatus()
-                != AccountStatus.ACTIVE) {
-
+        if (account.getStatus() != AccountStatus.ACTIVE) {
             throw new IllegalStateException(
-                    "Account is not active"
-            );
+                    "Account is not active");
         }
 
         return account;
     }
 
-    private void verifyOwnership(Account account) {
+    private void verifyAccess(Account account) {
 
         Authentication authentication =
-                SecurityContextHolder
-                        .getContext()
-                        .getAuthentication();
+                SecurityContextHolder.getContext().getAuthentication();
 
-        if (authentication == null
-                || !authentication.isAuthenticated()) {
+        if (authentication == null ||
+                !authentication.isAuthenticated()) {
 
             throw new SecurityException(
-                    "User is not authenticated"
-            );
+                    "User is not authenticated");
         }
 
-        String loggedInEmail =
-                authentication.getName();
+        if (isPrivilegedUser(authentication)) {
+            return;
+        }
 
-        if (account.getCustomer() == null
-                || account.getCustomer().getEmail() == null
-                || !account.getCustomer()
-                .getEmail()
-                .equalsIgnoreCase(loggedInEmail)) {
+        String loggedInEmail = authentication.getName();
+
+        if (account.getCustomer() == null ||
+                account.getCustomer().getEmail() == null ||
+                !account.getCustomer()
+                        .getEmail()
+                        .equalsIgnoreCase(loggedInEmail)) {
 
             throw new SecurityException(
-                    "You are not authorized to access this account"
-            );
+                    "You are not authorized to access this account");
         }
     }
 
-    private void validateAmount(
-            BigDecimal amount) {
+    private void verifyPrivilegedUser() {
 
-        if (amount == null
-                || amount.compareTo(BigDecimal.ZERO) <= 0) {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (!isPrivilegedUser(authentication)) {
+
+            throw new SecurityException(
+                    "Only admin or bank employee can perform this operation");
+        }
+    }
+
+    private boolean isPrivilegedUser(
+            Authentication authentication) {
+
+        if (authentication == null ||
+                authentication.getAuthorities() == null) {
+
+            return false;
+        }
+
+        return authentication.getAuthorities()
+                .stream()
+                .anyMatch(authority ->
+                        "ROLE_ADMIN".equals(
+                                authority.getAuthority())
+                                ||
+                                "ROLE_BANK_EMPLOYEE".equals(
+                                        authority.getAuthority()));
+    }
+
+    private void validateAmount(BigDecimal amount) {
+
+        if (amount == null ||
+                amount.compareTo(BigDecimal.ZERO) <= 0) {
 
             throw new IllegalArgumentException(
-                    "Amount must be greater than zero"
-            );
+                    "Amount must be greater than zero");
+        }
+
+        if (amount.scale() > 2) {
+
+            throw new IllegalArgumentException(
+                    "Amount cannot have more than two decimal places");
         }
     }
 
