@@ -1,8 +1,12 @@
 package com.smartbanking.config;
 
 import com.smartbanking.security.JwtAuthenticationFilter;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -11,6 +15,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -24,6 +29,7 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
+
         return new BCryptPasswordEncoder();
     }
 
@@ -43,6 +49,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/swagger-ui/**",
+                                "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
 
@@ -50,13 +57,33 @@ public class SecurityConfig {
                         .hasRole("ADMIN")
 
                         .requestMatchers("/api/employees/**")
-                        .hasAnyRole("ADMIN", "BANK_EMPLOYEE")
-
-                        .requestMatchers(
-                                "/api/customers/**",
-                                "/api/accounts/**",
-                                "/api/transactions/**"
+                        .hasAnyRole(
+                                "ADMIN",
+                                "BANK_EMPLOYEE"
                         )
+
+                        .requestMatchers("/api/accounts/**")
+                        .hasAnyRole(
+                                "CUSTOMER",
+                                "BANK_EMPLOYEE",
+                                "ADMIN"
+                        )
+
+                        .requestMatchers("/api/transactions/**")
+                        .hasAnyRole(
+                                "CUSTOMER",
+                                "BANK_EMPLOYEE",
+                                "ADMIN"
+                        )
+
+                        .requestMatchers("/api/customers/**")
+                        .hasAnyRole(
+                                "CUSTOMER",
+                                "BANK_EMPLOYEE",
+                                "ADMIN"
+                        )
+
+                        .requestMatchers("/api/beneficiaries/**")
                         .hasAnyRole(
                                 "CUSTOMER",
                                 "BANK_EMPLOYEE",
@@ -74,10 +101,10 @@ public class SecurityConfig {
 
         return http.build();
     }
+
     @Bean
-    public org.springframework.security.authentication.AuthenticationManager
-    authenticationManager(
-            org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration configuration)
+    public AuthenticationManager authenticationManager(
+            AuthenticationConfiguration configuration)
             throws Exception {
 
         return configuration.getAuthenticationManager();
