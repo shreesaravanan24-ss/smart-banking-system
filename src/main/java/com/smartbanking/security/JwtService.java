@@ -3,6 +3,7 @@ package com.smartbanking.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -12,22 +13,28 @@ import java.util.Date;
 @Service
 public class JwtService {
 
-    private static final String SECRET =
-            "SmartBankingSystemSecretKeyForJwtAuthentication2026";
+    private final SecretKey secretKey;
 
-    private final SecretKey secretKey =
-            Keys.hmacShaKeyFor(
-                    SECRET.getBytes(StandardCharsets.UTF_8));
+    private final long expirationTime;
 
-    private final long expirationTime =
-            1000 * 60 * 60;
+    public JwtService(
+            @Value("${jwt.secret}") String secret,
+            @Value("${jwt.expiration}") long expirationTime) {
+
+        this.secretKey = Keys.hmacShaKeyFor(
+                secret.getBytes(StandardCharsets.UTF_8)
+        );
+
+        this.expirationTime = expirationTime;
+    }
 
     public String generateToken(String username) {
 
         Date now = new Date();
 
-        Date expiration =
-                new Date(now.getTime() + expirationTime);
+        Date expiration = new Date(
+                now.getTime() + expirationTime
+        );
 
         return Jwts.builder()
                 .subject(username)
@@ -47,11 +54,18 @@ public class JwtService {
             String token,
             String username) {
 
-        String extractedUsername =
-                extractUsername(token);
+        try {
 
-        return extractedUsername.equals(username)
-                && !isTokenExpired(token);
+            String extractedUsername =
+                    extractUsername(token);
+
+            return extractedUsername.equals(username)
+                    && !isTokenExpired(token);
+
+        } catch (Exception e) {
+
+            return false;
+        }
     }
 
     private boolean isTokenExpired(String token) {
