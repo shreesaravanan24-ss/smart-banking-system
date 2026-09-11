@@ -7,6 +7,9 @@ import com.smartbanking.account.repository.AccountRepository;
 import com.smartbanking.customer.entity.Customer;
 import com.smartbanking.customer.repository.CustomerRepository;
 import com.smartbanking.enums.AccountStatus;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,7 +35,8 @@ public class AccountServiceImpl implements AccountService {
     @Transactional
     public AccountResponse createAccount(AccountRequest request) {
 
-        Customer customer = customerRepository.findById(request.getCustomerId())
+        Customer customer = customerRepository
+                .findById(request.getCustomerId())
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Customer not found with ID: "
@@ -44,7 +48,10 @@ public class AccountServiceImpl implements AccountService {
 
         do {
             accountNumber = generateAccountNumber();
-        } while (accountRepository.existsByAccountNumber(accountNumber));
+        } while (
+                accountRepository
+                        .existsByAccountNumber(accountNumber)
+        );
 
         account.setAccountNumber(accountNumber);
         account.setAccountType(request.getAccountType());
@@ -52,33 +59,41 @@ public class AccountServiceImpl implements AccountService {
         account.setBalance(BigDecimal.ZERO);
         account.setCustomer(customer);
 
-        return convertToResponse(accountRepository.save(account));
+        return convertToResponse(
+                accountRepository.save(account)
+        );
     }
 
     @Override
+    @Transactional(readOnly = true)
     public AccountResponse getAccountById(Long id) {
 
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Account not found with ID: " + id));
+        Account account = getAccount(id);
+
+        verifyOwnership(account);
 
         return convertToResponse(account);
     }
 
     @Override
-    public AccountResponse getAccountByNumber(String accountNumber) {
+    @Transactional(readOnly = true)
+    public AccountResponse getAccountByNumber(
+            String accountNumber) {
 
         Account account = accountRepository
                 .findByAccountNumber(accountNumber)
                 .orElseThrow(() ->
                         new IllegalArgumentException(
-                                "Account not found: " + accountNumber));
+                                "Account not found: "
+                                        + accountNumber));
+
+        verifyOwnership(account);
 
         return convertToResponse(account);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<AccountResponse> getAllAccounts() {
 
         return accountRepository.findAll()
@@ -89,54 +104,117 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional
-    public AccountResponse deposit(Long id, BigDecimal amount) {
+    public AccountResponse deposit(
+            Long id,
+            BigDecimal amount) {
 
         validateAmount(amount);
 
         Account account = getActiveAccount(id);
 
-        account.setBalance(account.getBalance().add(amount));
+        verifyOwnership(account);
 
-        return convertToResponse(accountRepository.save(account));
+        account.setBalance(
+                account.getBalance().add(amount)
+        );
+
+        return convertToResponse(
+                accountRepository.save(account)
+        );
     }
 
     @Override
     @Transactional
-    public AccountResponse withdraw(Long id, BigDecimal amount) {
+    public AccountResponse withdraw(
+            Long id,
+            BigDecimal amount) {
 
         validateAmount(amount);
 
         Account account = getActiveAccount(id);
 
-        if (account.getBalance().compareTo(amount) < 0) {
-            throw new IllegalArgumentException("Insufficient balance");
+        verifyOwnership(account);
+
+        if (account.getBalance()
+                .compareTo(amount) < 0) {
+
+            throw new IllegalArgumentException(
+                    "Insufficient balance"
+            );
         }
 
-        account.setBalance(account.getBalance().subtract(amount));
+        account.setBalance(
+                account.getBalance().subtract(amount)
+        );
 
-        return convertToResponse(accountRepository.save(account));
+        return convertToResponse(
+                accountRepository.save(account)
+        );
+    }
+
+    private Account getAccount(Long id) {
+
+        return accountRepository.findById(id)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Account not found with ID: "
+                                        + id));
     }
 
     private Account getActiveAccount(Long id) {
 
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Account not found with ID: " + id));
+        Account account = getAccount(id);
 
-        if (account.getStatus() != AccountStatus.ACTIVE) {
+        if (account.getStatus()
+                != AccountStatus.ACTIVE) {
+
             throw new IllegalStateException(
-                    "Account is not active");
+                    "Account is not active"
+            );
         }
 
         return account;
     }
 
-    private void validateAmount(BigDecimal amount) {
+    private void verifyOwnership(Account account) {
 
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()) {
+
+            throw new SecurityException(
+                    "User is not authenticated"
+            );
+        }
+
+        String loggedInEmail =
+                authentication.getName();
+
+        if (account.getCustomer() == null
+                || account.getCustomer().getEmail() == null
+                || !account.getCustomer()
+                .getEmail()
+                .equalsIgnoreCase(loggedInEmail)) {
+
+            throw new SecurityException(
+                    "You are not authorized to access this account"
+            );
+        }
+    }
+
+    private void validateAmount(
+            BigDecimal amount) {
+
+        if (amount == null
+                || amount.compareTo(BigDecimal.ZERO) <= 0) {
+
             throw new IllegalArgumentException(
-                    "Amount must be greater than zero");
+                    "Amount must be greater than zero"
+            );
         }
     }
 
@@ -150,7 +228,8 @@ public class AccountServiceImpl implements AccountService {
                 .toUpperCase();
     }
 
-    private AccountResponse convertToResponse(Account account) {
+    private AccountResponse convertToResponse(
+            Account account) {
 
         return new AccountResponse(
                 account.getId(),
