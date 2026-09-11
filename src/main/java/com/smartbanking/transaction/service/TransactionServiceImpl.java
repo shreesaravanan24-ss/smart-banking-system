@@ -9,6 +9,7 @@ import com.smartbanking.transaction.dto.TransactionResponse;
 import com.smartbanking.transaction.dto.TransferRequest;
 import com.smartbanking.transaction.entity.Transaction;
 import com.smartbanking.transaction.repository.TransactionRepository;
+import com.smartbanking.validation.TransactionValidator;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,40 +25,24 @@ public class TransactionServiceImpl implements TransactionService {
 
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
+    private final TransactionValidator transactionValidator;
 
     public TransactionServiceImpl(
             AccountRepository accountRepository,
-            TransactionRepository transactionRepository) {
+            TransactionRepository transactionRepository,
+            TransactionValidator transactionValidator) {
 
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
+        this.transactionValidator = transactionValidator;
     }
 
     @Override
     @Transactional
-    public TransactionResponse transfer(TransferRequest request) {
+    public TransactionResponse transfer(
+            TransferRequest request) {
 
-        if (request.getSenderAccountNumber() == null
-                || request.getReceiverAccountNumber() == null) {
-
-            throw new IllegalArgumentException(
-                    "Sender and receiver account numbers are required");
-        }
-
-        if (request.getSenderAccountNumber()
-                .equals(request.getReceiverAccountNumber())) {
-
-            throw new IllegalArgumentException(
-                    "Sender and receiver accounts cannot be the same");
-        }
-
-        if (request.getAmount() == null
-                || request.getAmount()
-                .compareTo(BigDecimal.ZERO) <= 0) {
-
-            throw new IllegalArgumentException(
-                    "Transfer amount must be greater than zero");
-        }
+        transactionValidator.validateTransfer(request);
 
         Account sender = accountRepository
                 .findByAccountNumber(
@@ -76,7 +61,7 @@ public class TransactionServiceImpl implements TransactionService {
         validateAccount(sender);
         validateAccount(receiver);
 
-        verifyAccountOwnership(sender);
+        verifySenderOwnership(sender);
 
         if (sender.getBalance()
                 .compareTo(request.getAmount()) < 0) {
@@ -129,7 +114,7 @@ public class TransactionServiceImpl implements TransactionService {
                         new IllegalArgumentException(
                                 "Account not found"));
 
-        verifyAccountOwnership(account);
+        verifySenderOwnership(account);
 
         return transactionRepository
                 .findByAccountIdOrderByCreatedAtDesc(accountId)
@@ -138,7 +123,21 @@ public class TransactionServiceImpl implements TransactionService {
                 .toList();
     }
 
-    private void verifyAccountOwnership(Account account) {
+    private void validateAccount(
+            Account account) {
+
+        if (account.getStatus()
+                != AccountStatus.ACTIVE) {
+
+            throw new IllegalStateException(
+                    "Account "
+                            + account.getAccountNumber()
+                            + " is not active");
+        }
+    }
+
+    private void verifySenderOwnership(
+            Account account) {
 
         Authentication authentication =
                 SecurityContextHolder
@@ -163,17 +162,6 @@ public class TransactionServiceImpl implements TransactionService {
 
             throw new SecurityException(
                     "You are not authorized to access this account");
-        }
-    }
-
-    private void validateAccount(Account account) {
-
-        if (account.getStatus() != AccountStatus.ACTIVE) {
-
-            throw new IllegalStateException(
-                    "Account "
-                            + account.getAccountNumber()
-                            + " is not active");
         }
     }
 
