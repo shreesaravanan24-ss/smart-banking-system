@@ -5,6 +5,9 @@ import com.smartbanking.customer.dto.CustomerResponse;
 import com.smartbanking.customer.entity.Customer;
 import com.smartbanking.customer.repository.CustomerRepository;
 import com.smartbanking.enums.Role;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -55,16 +58,24 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     public CustomerResponse getCustomerById(Long id) {
 
-        Customer customer = customerRepository.findById(id)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Customer not found with ID: " + id));
+        Customer customer = findCustomer(id);
+
+        verifyAccess(customer);
 
         return convertToResponse(customer);
     }
 
     @Override
     public List<CustomerResponse> getAllCustomers() {
+
+        Authentication authentication =
+                SecurityContextHolder.getContext()
+                        .getAuthentication();
+
+        if (!isPrivilegedUser(authentication)) {
+            throw new SecurityException(
+                    "Only admin or bank employee can view all customers");
+        }
 
         return customerRepository.findAll()
                 .stream()
@@ -77,20 +88,23 @@ public class CustomerServiceImpl implements CustomerService {
             Long id,
             CustomerRequest request) {
 
-        Customer customer = customerRepository.findById(id)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Customer not found with ID: " + id));
+        Customer customer = findCustomer(id);
 
-        if (!customer.getEmail().equals(request.getEmail())
-                && customerRepository.existsByEmail(request.getEmail())) {
+        verifyAccess(customer);
+
+        if (!customer.getEmail()
+                .equalsIgnoreCase(request.getEmail())
+                && customerRepository
+                .existsByEmail(request.getEmail())) {
 
             throw new IllegalArgumentException(
                     "Email already exists");
         }
 
-        if (!customer.getPhone().equals(request.getPhone())
-                && customerRepository.existsByPhone(request.getPhone())) {
+        if (!customer.getPhone()
+                .equals(request.getPhone())
+                && customerRepository
+                .existsByPhone(request.getPhone())) {
 
             throw new IllegalArgumentException(
                     "Phone number already exists");
@@ -100,10 +114,6 @@ public class CustomerServiceImpl implements CustomerService {
         customer.setEmail(request.getEmail());
         customer.setPhone(request.getPhone());
 
-        /*
-         * Only change the password when a new password
-         * has actually been supplied.
-         */
         if (request.getPassword() != null
                 && !request.getPassword().isBlank()) {
 
@@ -123,12 +133,76 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     public void deleteCustomer(Long id) {
 
+        Authentication authentication =
+                SecurityContextHolder.getContext()
+                        .getAuthentication();
+
+        if (!isPrivilegedUser(authentication)) {
+            throw new SecurityException(
+                    "Only admin or bank employee can delete customers");
+        }
+
         if (!customerRepository.existsById(id)) {
             throw new IllegalArgumentException(
                     "Customer not found with ID: " + id);
         }
 
         customerRepository.deleteById(id);
+    }
+
+    private Customer findCustomer(Long id) {
+
+        return customerRepository.findById(id)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Customer not found with ID: " + id));
+    }
+
+    private void verifyAccess(Customer customer) {
+
+        Authentication authentication =
+                SecurityContextHolder.getContext()
+                        .getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()) {
+
+            throw new SecurityException(
+                    "User is not authenticated");
+        }
+
+        if (isPrivilegedUser(authentication)) {
+            return;
+        }
+
+        String loggedInEmail =
+                authentication.getName();
+
+        if (customer.getEmail() == null
+                || !customer.getEmail()
+                .equalsIgnoreCase(loggedInEmail)) {
+
+            throw new SecurityException(
+                    "You are not authorized to access this customer data");
+        }
+    }
+
+    private boolean isPrivilegedUser(
+            Authentication authentication) {
+
+        if (authentication == null
+                || authentication.getAuthorities() == null) {
+
+            return false;
+        }
+
+        return authentication.getAuthorities()
+                .stream()
+                .anyMatch(authority ->
+                        "ROLE_ADMIN".equals(
+                                authority.getAuthority())
+                                || "ROLE_BANK_EMPLOYEE".equals(
+                                authority.getAuthority()));
     }
 
     private CustomerResponse convertToResponse(
