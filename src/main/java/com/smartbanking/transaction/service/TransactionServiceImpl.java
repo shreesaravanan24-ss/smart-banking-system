@@ -2,6 +2,7 @@ package com.smartbanking.transaction.service;
 
 import com.smartbanking.account.entity.Account;
 import com.smartbanking.account.repository.AccountRepository;
+import com.smartbanking.audit.service.AuditService;
 import com.smartbanking.enums.AccountStatus;
 import com.smartbanking.enums.TransactionStatus;
 import com.smartbanking.enums.TransactionType;
@@ -16,7 +17,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,15 +26,18 @@ public class TransactionServiceImpl implements TransactionService {
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final TransactionValidator transactionValidator;
+    private final AuditService auditService;
 
     public TransactionServiceImpl(
             AccountRepository accountRepository,
             TransactionRepository transactionRepository,
-            TransactionValidator transactionValidator) {
+            TransactionValidator transactionValidator,
+            AuditService auditService) {
 
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.transactionValidator = transactionValidator;
+        this.auditService = auditService;
     }
 
     @Override
@@ -100,6 +103,16 @@ public class TransactionServiceImpl implements TransactionService {
         Transaction savedTransaction =
                 transactionRepository.save(transaction);
 
+        recordAudit(
+                "MONEY_TRANSFER",
+                "Transferred "
+                        + request.getAmount()
+                        + " from account "
+                        + sender.getAccountNumber()
+                        + " to account "
+                        + receiver.getAccountNumber()
+        );
+
         return convertToResponse(savedTransaction);
     }
 
@@ -163,6 +176,30 @@ public class TransactionServiceImpl implements TransactionService {
             throw new SecurityException(
                     "You are not authorized to access this account");
         }
+    }
+
+    private void recordAudit(
+            String action,
+            String description) {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        String performedBy = "SYSTEM";
+
+        if (authentication != null
+                && authentication.isAuthenticated()) {
+
+            performedBy = authentication.getName();
+        }
+
+        auditService.recordAction(
+                action,
+                description,
+                performedBy
+        );
     }
 
     private String generateTransactionId() {
