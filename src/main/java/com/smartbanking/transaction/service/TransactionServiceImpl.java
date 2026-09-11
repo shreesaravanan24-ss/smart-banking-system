@@ -9,6 +9,9 @@ import com.smartbanking.transaction.dto.TransactionResponse;
 import com.smartbanking.transaction.dto.TransferRequest;
 import com.smartbanking.transaction.entity.Transaction;
 import com.smartbanking.transaction.repository.TransactionRepository;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +37,13 @@ public class TransactionServiceImpl implements TransactionService {
     @Transactional
     public TransactionResponse transfer(TransferRequest request) {
 
+        if (request.getSenderAccountNumber() == null
+                || request.getReceiverAccountNumber() == null) {
+
+            throw new IllegalArgumentException(
+                    "Sender and receiver account numbers are required");
+        }
+
         if (request.getSenderAccountNumber()
                 .equals(request.getReceiverAccountNumber())) {
 
@@ -41,21 +51,24 @@ public class TransactionServiceImpl implements TransactionService {
                     "Sender and receiver accounts cannot be the same");
         }
 
-        if (request.getAmount() == null ||
-                request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+        if (request.getAmount() == null
+                || request.getAmount()
+                .compareTo(BigDecimal.ZERO) <= 0) {
 
             throw new IllegalArgumentException(
                     "Transfer amount must be greater than zero");
         }
 
         Account sender = accountRepository
-                .findByAccountNumber(request.getSenderAccountNumber())
+                .findByAccountNumber(
+                        request.getSenderAccountNumber())
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Sender account not found"));
 
         Account receiver = accountRepository
-                .findByAccountNumber(request.getReceiverAccountNumber())
+                .findByAccountNumber(
+                        request.getReceiverAccountNumber())
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Receiver account not found"));
@@ -63,7 +76,10 @@ public class TransactionServiceImpl implements TransactionService {
         validateAccount(sender);
         validateAccount(receiver);
 
-        if (sender.getBalance()
+        verifySenderOwnership(sender);
+
+        if (sender.getBalance() == null
+                || sender.getBalance()
                 .compareTo(request.getAmount()) < 0) {
 
             throw new IllegalArgumentException(
@@ -83,10 +99,17 @@ public class TransactionServiceImpl implements TransactionService {
 
         Transaction transaction = new Transaction();
 
-        transaction.setTransactionId(generateTransactionId());
+        transaction.setTransactionId(
+                generateTransactionId());
+
         transaction.setAmount(request.getAmount());
-        transaction.setType(TransactionType.TRANSFER);
-        transaction.setStatus(TransactionStatus.SUCCESS);
+
+        transaction.setType(
+                TransactionType.TRANSFER);
+
+        transaction.setStatus(
+                TransactionStatus.SUCCESS);
+
         transaction.setAccount(sender);
 
         Transaction savedTransaction =
@@ -96,7 +119,9 @@ public class TransactionServiceImpl implements TransactionService {
     }
 
     @Override
-    public List<TransactionResponse> getAccountTransactions(Long accountId) {
+    @Transactional(readOnly = true)
+    public List<TransactionResponse> getAccountTransactions(
+            Long accountId) {
 
         return transactionRepository
                 .findByAccountIdOrderByCreatedAtDesc(accountId)
@@ -110,8 +135,37 @@ public class TransactionServiceImpl implements TransactionService {
         if (account.getStatus() != AccountStatus.ACTIVE) {
 
             throw new IllegalStateException(
-                    "Account " + account.getAccountNumber()
+                    "Account "
+                            + account.getAccountNumber()
                             + " is not active");
+        }
+    }
+
+    private void verifySenderOwnership(Account sender) {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()) {
+
+            throw new IllegalStateException(
+                    "User is not authenticated");
+        }
+
+        String loggedInEmail =
+                authentication.getName();
+
+        if (sender.getCustomer() == null
+                || sender.getCustomer().getEmail() == null
+                || !sender.getCustomer()
+                .getEmail()
+                .equalsIgnoreCase(loggedInEmail)) {
+
+            throw new SecurityException(
+                    "You are not authorized to use this account");
         }
     }
 
@@ -135,7 +189,8 @@ public class TransactionServiceImpl implements TransactionService {
                 transaction.getType(),
                 transaction.getStatus(),
                 transaction.getCreatedAt(),
-                transaction.getAccount().getAccountNumber()
+                transaction.getAccount()
+                        .getAccountNumber()
         );
     }
 }
