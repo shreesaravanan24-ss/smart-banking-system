@@ -58,13 +58,17 @@ public class AuthServiceImpl implements AuthService {
                 passwordEncoder.encode(request.getPassword())
         );
 
+        // Every user registering through the public API
+        // is created as a CUSTOMER.
         customer.setRole(Role.CUSTOMER);
 
         Customer savedCustomer =
                 customerRepository.save(customer);
 
         String token =
-                jwtService.generateToken(savedCustomer.getEmail());
+                jwtService.generateToken(
+                        savedCustomer.getEmail()
+                );
 
         return new AuthResponse(
                 token,
@@ -84,7 +88,9 @@ public class AuthServiceImpl implements AuthService {
         );
 
         String token =
-                jwtService.generateToken(request.getEmail());
+                jwtService.generateToken(
+                        request.getEmail()
+                );
 
         return new AuthResponse(
                 token,
