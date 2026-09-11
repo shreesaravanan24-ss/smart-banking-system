@@ -3,9 +3,12 @@ package com.smartbanking.account.controller;
 import com.smartbanking.account.dto.AccountRequest;
 import com.smartbanking.account.dto.AccountResponse;
 import com.smartbanking.account.service.AccountService;
+
 import jakarta.validation.Valid;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -22,6 +25,7 @@ public class AccountController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'BANK_EMPLOYEE')")
     public ResponseEntity<AccountResponse> createAccount(
             @Valid @RequestBody AccountRequest request) {
 
@@ -31,6 +35,7 @@ public class AccountController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'BANK_EMPLOYEE')")
     public ResponseEntity<List<AccountResponse>> getAllAccounts() {
 
         return ResponseEntity.ok(
@@ -38,6 +43,7 @@ public class AccountController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'BANK_EMPLOYEE')")
     public ResponseEntity<AccountResponse> getAccount(
             @PathVariable Long id) {
 
@@ -46,6 +52,7 @@ public class AccountController {
     }
 
     @GetMapping("/number/{accountNumber}")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'BANK_EMPLOYEE')")
     public ResponseEntity<AccountResponse> getAccountByNumber(
             @PathVariable String accountNumber) {
 
@@ -54,6 +61,7 @@ public class AccountController {
     }
 
     @PostMapping("/{id}/deposit")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BANK_EMPLOYEE')")
     public ResponseEntity<AccountResponse> deposit(
             @PathVariable Long id,
             @RequestParam BigDecimal amount) {
@@ -63,6 +71,7 @@ public class AccountController {
     }
 
     @PostMapping("/{id}/withdraw")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BANK_EMPLOYEE')")
     public ResponseEntity<AccountResponse> withdraw(
             @PathVariable Long id,
             @RequestParam BigDecimal amount) {
